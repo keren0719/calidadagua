@@ -1,8 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Necesario para conectar con la API de análisis. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="flutter_application_1"
+        android:label="Agrovision AI"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+        <!-- usesCleartextTraffic permite usar la API local por http:// durante el
+             desarrollo. Desactívalo cuando la API esté publicada con https://. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
