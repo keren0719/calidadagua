@@ -185,8 +185,48 @@ renombra las claves para que coincidan con tus clases.
 - El proyecto pasó de `flutter_application_1` a `agrovision_ai`, con id `com.agrovision.ai` en Android e iOS.
 - Se añadieron los permisos de cámara y galería en iOS y el permiso de internet en Android.
 - Se incluyó la fuente Manrope en `assets/fonts` para que la app no dependa de internet.
+## 7. Base de datos
 
-## 7. Próximos pasos sugeridos
+El script [`database/agrovision_db.sql`](database/agrovision_db.sql) crea la base de datos
+`agrovision_db` (MariaDB 10.2.1 o superior; probado con la 13.x). Aún no está conectada
+a la API: es la base para implementar `/auth/*` y guardar el historial en el servidor
+(ver sección 7).
+
+| Tabla | Descripción |
+|---|---|
+| `usuarios` | Perfiles de usuario (nombre, correo y hash de la contraseña) |
+| `modelos` | Ficha mínima de cada modelo de ML: versión, formato, dataset y licencia |
+| `analisis` | Historial: tipo (planta/agua), estado, imagen y fecha. El usuario es opcional |
+| `predicciones` | Resultados de los modelos: una fila por clase o por detección |
+| `interpretaciones_recomendaciones` | Explicación y recomendaciones que se muestran al usuario |
+
+La vista `vista_historial` une todo para la pantalla Historial.
+
+### Cómo se guardan los resultados
+
+- **Plantas (YOLO):** cada detección es una fila en `predicciones`, con su clase, su
+  confianza y la caja (`bbox_x1`, `bbox_y1`, `bbox_x2`, `bbox_y2`). Una imagen puede
+  tener varias detecciones.
+- **Agua (EfficientNet):** una fila en `predicciones` con la clase predicha y su confianza,
+  sin caja.
+- **Confianza:** se guarda como porcentaje de 0 a 100. Si la API devuelve un valor entre
+  0 y 1, el backend debe multiplicarlo por 100 antes de insertarlo.
+- **Estado del análisis:** `completado`, `no_concluyente` (confianza insuficiente) o `error`.
+- **Imágenes:** `imagen_path` es opcional y `imagen_eliminada_en` registra cuándo se
+  borró la imagen, para poder aplicar una política de retención.
+- **Clases:** no están fijadas en la base de datos, porque dependen del dataset y de los
+  modelos, que aún están por definir. La tabla `modelos` permite registrar su
+  procedencia y su versión cuando estén disponibles.
+
+### Uso
+
+Ejecutar el script completo en MySQL Workbench, o desde la terminal:
+
+    mariadb -u usuario -p < database/agrovision_db.sql
+
+Si ya existe una versión anterior de la base de datos y no hay datos que conservar,
+ejecutar antes `DROP DATABASE IF EXISTS agrovision_db;`.
+## 8. Próximos pasos sugeridos
 
 - Implementar `/auth/*` en FastAPI (por ejemplo con JWT) y apagar "Login de prueba".
 - Si quieres el historial en el servidor, crear `GET /history` y una implementación nueva de
