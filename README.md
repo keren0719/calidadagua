@@ -187,7 +187,7 @@ renombra las claves para que coincidan con tus clases.
 - Se incluyó la fuente Manrope en `assets/fonts` para que la app no dependa de internet.
 ## 7. Base de datos
 
-El script [`database/agrovision_db.sql`](database/agrovision_db.sql) crea la base de datos
+El script [`database/agrovision_db.sql`](database/agrovision_db.sql) guardado en el repositorio con la ubicacion API REST/Bacteria_multitask crea la base de datos
 `agrovision_db` (MariaDB 10.2.1 o superior; probado con la 13.x). Aún no está conectada
 a la API: es la base para implementar `/auth/*` y guardar el historial en el servidor
 (ver sección 7).
@@ -229,6 +229,6 @@ ejecutar antes `DROP DATABASE IF EXISTS agrovision_db;`.
 ## 8. Próximos pasos sugeridos
 
 - Implementar `/auth/*` en FastAPI (por ejemplo con JWT) y apagar "Login de prueba".
-- Si quieres el historial en el servidor, crear `GET /history` y una implementación nueva de
+
   `HistoryRepository`. Hoy se guarda en el teléfono.
 - Antes de publicar: ícono de la app, firma de release en Android y quitar el tráfico `http://`.
