@@ -2,7 +2,7 @@
 
 Frontend móvil para analizar **plantas** (pepino, YOLOv11) y la **calidad del agua**
 (bacterias, EfficientNet-B0). Está basado en el diseño de Figma *Agrovision AI Mobile App*
-y preparado para conectarse con la API FastAPI de `API REST/Bacteria_multitask/main.py`.
+y preparado para conectarse con la API FastAPI de `backend/modelos/Bacteria_multitask/main.py`.
 
 Hoy funciona **100 % con datos simulados (mock)**. Para pasar a la API real no hay que tocar
 ninguna pantalla: se cambia un interruptor en **Perfil › Configuración**, o un `--dart-define`
@@ -114,7 +114,7 @@ por el mismo código de parseo que se usa con la API real. Si algo funciona con 
 
 1. **Arranca la API** con acceso desde la red:
    ```bash
-   cd "API REST/Bacteria_multitask"
+   cd backend/modelos/Bacteria_multitask
    uvicorn main:app --host 0.0.0.0 --port 8000
    ```
 2. En la app ve a **Perfil › Configuración** y:
@@ -186,7 +186,7 @@ renombra las claves para que coincidan con tus clases.
 - Se incluyó la fuente Manrope en `assets/fonts` para que la app no dependa de internet.
 ## 7. Base de datos
 
-El script [`agrovision_db.sql`](backend/API%20REST/Bacteria_multitask/agrovision_db.sql) (en `backend/API REST/Bacteria_multitask`) crea la base de datos
+El script [`agrovision_db.sql`](backend/API%20REST/Bacteria_multitask/agrovision_db.sql) (en `backend/modelos/Bacteria_multitask`) crea la base de datos
 `agrovision_db` (MariaDB 10.2.1 o superior; probado con la 13.x). Aún no está conectada
 a la API: es la base para implementar `/auth/*` y guardar el historial en el servidor
 (ver sección 7).
@@ -234,10 +234,10 @@ ejecutar antes `DROP DATABASE IF EXISTS agrovision_db;`.
 
 ## 9. Modelo de agua (coliformes) · en desarrollo
 
-El paquete `backend/API REST/Bacteria_multitask/agua` contiene la validación, las reglas de decisión y las
-recomendaciones de `POST /predict/water`. Falta el cargador del modelo (`agua/models/water.py`) y sus pesos, que
-dependen de que el curso habilite el modelo. Mientras tanto la API arranca igual con YOLO y EfficientNet:
-`GET /health` informa el estado del modelo de agua y `/predict/water` no se registra.
+El paquete `backend/modelos/Bacteria_multitask/agua` contiene la validación, las reglas de decisión y las
+recomendaciones de `POST /predict/water`, incluido el cargador (`agua/models/water.py`). Faltan los pesos
+entrenados, que dependen de que el curso habilite el modelo. Sin ellos, la API arranca con YOLO y
+EfficientNet, `/health` informa `degraded` y `/predict/water` responde 503.
 
 Reglas de imagen unificadas (app y API): JPG o PNG, mínimo 300 × 300 px, máximo 10 MB.
 
@@ -248,3 +248,16 @@ Reglas de imagen unificadas (app y API): JPG o PNG, mínimo 300 × 300 px, máxi
   Espera un **ROI bacteriano** (microscopía): se puede enviar `?x=&y=&w=&h=` para recortarlo; sin ellos usa la imagen completa.
   No identifica especies ni potabilidad del agua.
 - Configuración y clases en `model/config/` (`yolo_*.json`, `bacteria_*.json`). Los `.pt` originales no se incluyen.
+
+## 11. Despliegue de la API con Docker
+
+Docker despliega la API de pepinos y bacterias en el puerto 8000. El modelo de agua requiere pesos
+que no están incluidos en el repo. Para iniciar:
+
+```bash
+docker compose up --build -d
+curl http://localhost:8000/health
+```
+
+El puerto del host se puede cambiar con `API_PORT` (por ejemplo, `API_PORT=8080`). Instrucciones
+para el servidor y para habilitar el modelo de agua: ver [`DOCKER_DEPLOYMENT.md`](DOCKER_DEPLOYMENT.md).

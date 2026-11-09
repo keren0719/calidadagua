@@ -1,31 +1,11 @@
+# La API inicia con pepinos y bacterias. El modelo de agua es opcional; ver
+# compose.water.yaml cuando se disponga de sus pesos.
 services:
-  cucumber-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.cucumber
+  api:
+    build: ./backend/modelos/Bacteria_multitask
     ports:
-      - "8001:8000"
-    restart: unless-stopped
-
-  bacteria-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.bacteria
-    ports:
-      - "8002:8000"
-    restart: unless-stopped
-
-  water-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.water
-    ports:
-      - "8003:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
-      API_KEY: ${WATER_API_KEY:-}
-    volumes:
-      - type: bind
-        source: ./model/model_c
-        target: /models
-        read_only: true
+      API_KEY: ${API_KEY:-}        # protege solo /predict/water
+      MODEL_C_DIR: /models
     restart: unless-stopped

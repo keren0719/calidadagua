@@ -1,0 +1,9 @@
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ./backend/modelos/Bacteria_multitask/model/model_c
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false

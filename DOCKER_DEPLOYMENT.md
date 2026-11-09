@@ -1,36 +1,68 @@
-# Despliegue de las API con Docker
+# Despliegue con Docker
 
-Cada modelo se ejecuta en su propio contenedor:
+Este repositorio despliega la **API FastAPI**, no la app móvil Flutter. Con el Compose base
+se habilitan pepinos y bacterias en `http://localhost:8000`. El código del análisis de agua
+está incluido, pero sus pesos no están en el repositorio; por eso el servicio puede arrancar
+sin ellos y reporta `degraded` en `/health`.
 
-| Servicio | URL | Endpoint de predicción |
-|---|---|---|
-| Pepinos (YOLOv11) | `http://localhost:8001` | `POST /predict/cucumber` |
-| Bacterias (EfficientNet) | `http://localhost:8002` | `POST /predict/bacteria` |
-| Agua (coliformes) | `http://localhost:8003` | `POST /predict/water` |
+| Endpoint | Modelo |
+|---|---|
+| `POST /predict/cucumber` | YOLOv11 (pepinos) |
+| `POST /predict/bacteria` | EfficientNet-B0 multitarea (Gram + morfología) |
+| `POST /predict/water` | Coliformes (agua); requiere los pesos del modelo |
+| `GET /health` | Estado de los tres modelos |
 
-La documentación interactiva de cada API está disponible en `/docs`.
+Documentación interactiva en `/docs`.
 
-## Modelo de agua
-
-Antes de iniciar los contenedores, crea `model/model_c/` y coloca allí:
-
-- `model_c.onnx`
-- `classes.json`
-- `model_config.json` (opcional si los valores por defecto son adecuados)
-
-El ONNX debe recibir tensores NCHW `float32`; `classes.json` debe identificar al menos dos clases. Si la clase positiva no se puede deducir de sus nombres, define `positive_class` en `model_config.json`. Sin estos archivos el contenedor inicia, pero `/health` muestra `degraded` y las predicciones responden con error de modelo no disponible.
-
-## Iniciar y detener
+## Iniciar la API
 
 Desde la carpeta que contiene `compose.yaml`:
 
-```powershell
+```bash
+docker compose config --quiet
 docker compose up --build -d
 docker compose ps
-docker compose logs -f
+docker compose logs -f api
+curl http://localhost:${API_PORT:-8000}/health
+```
+
+El puerto del host por defecto es `8000`. Si está ocupado o la universidad asignó otro,
+puedes elegirlo al iniciar:
+
+```bash
+API_PORT=8080 docker compose up --build -d
+curl http://localhost:8080/health
+```
+
+En un servidor remoto, sustituye `localhost` por su IP o nombre DNS y confirma con
+administración de red que el puerto elegido esté permitido desde fuera. Para exponer el
+servicio públicamente, configura HTTPS y controles de acceso en un proxy inverso o gateway.
+
+## Modelo de agua
+
+El cargador y el endpoint están en el código, pero los pesos no se distribuyen con el repo.
+Cuando estén disponibles, colócalos en `backend/modelos/Bacteria_multitask/model/model_c/`:
+
+- `model_c.onnx`
+- `classes.json`
+- `model_config.json` (opcional)
+
+Luego inicia incluyendo el Compose opcional, que monta esa carpeta como solo lectura y falla
+explícitamente si la carpeta no existe:
+
+```bash
+docker compose -f compose.yaml -f compose.water.yaml up --build -d
+```
+
+Sin los pesos, el Compose base deja disponibles pepinos y bacterias; `/health` muestra
+`degraded` y `/predict/water` responde 503.
+
+## Detener
+
+```bash
 docker compose down
 ```
 
-Las imágenes de YOLO y EfficientNet usan PyTorch para CPU. El archivo ONNX de pepinos se extrae durante el build desde `yolo11m_cucumber_deployment.zip`; los pesos y la configuración de EfficientNet se copian desde `model/` y `config/`.
-
-Para proteger la API de agua con una clave, define `WATER_API_KEY` antes de levantar Compose. Los clientes deben enviarla en la cabecera `X-API-Key`.
+La variable `API_KEY` protege únicamente `/predict/water` y se envía en la cabecera
+`X-API-Key`; no autentica los endpoints de pepinos o bacterias. No publiques esos endpoints
+sin controles de acceso de red o un proxy/gateway que los proteja.
