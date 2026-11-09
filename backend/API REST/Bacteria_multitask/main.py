@@ -3,65 +3,64 @@ import json
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
-import torch
-import torchvision.transforms as transforms
+import onnxruntime as ort
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
-from torchvision.models import efficientnet_b0
 from ultralytics import YOLO
 
-from agua.api_water import register_error_handlers, router as water_router
-from agua.config import get_settings
-from agua.errors import AnalysisError
-from agua.water_analysis import build_water_analyzer
+# Modelo C (agua / coliformes): aún en desarrollo. Si el paquete `agua` está incompleto
+# (p. ej. falta models/water.py), la API arranca igual con YOLO y EfficientNet.
+try:
+    from agua.api_water import register_error_handlers, router as water_router
+    from agua.config import get_settings
+    from agua.errors import AnalysisError
+    from agua.water_analysis import build_water_analyzer
+    WATER_AVAILABLE = True
+    WATER_IMPORT_ERROR = None
+except Exception as exc:  # ImportError u otro error al importar el paquete
+    WATER_AVAILABLE = False
+    WATER_IMPORT_ERROR = str(exc)
+    print(f"Advertencia: módulo de agua (coliformes) no disponible: {exc}")
 
 # --- CONFIGURACIÓN DE RUTAS (absolutas, no dependen de dónde ejecutes uvicorn) ---
 BASE_DIR = Path(__file__).parent
 YOLO_MODEL_PATH = BASE_DIR / "model" / "yolo11m_cucumber.onnx"
-BACTERIA_MODEL_PATH = BASE_DIR / "model" / "bacteria_efficientnet_b0_best.pt"
-CLASSES_PATH = BASE_DIR / "model" / "config" / "classes.json"
-CONFIG_PATH = BASE_DIR / "model" / "config" / "model_config.json"
+BACTERIA_MODEL_PATH = BASE_DIR / "model" / "bacteria_efficientnet_b0.onnx"
+CLASSES_PATH = BASE_DIR / "model" / "config" / "bacteria_classes.json"
+CONFIG_PATH = BASE_DIR / "model" / "config" / "bacteria_model_config.json"
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MIN_IMAGE_SIDE = 300  # px; igual que la app
+ALLOWED_FORMATS = ('JPEG', 'PNG')  # igual que la app
 
 # --- ESTADO GLOBAL ---
 yolo_model = None
 bacteria_model = None
-bacteria_classes = []
+bacteria_classes = {}  # {'gram': {'0': ...}, 'morphology': {'0': ...}}
 bacteria_config = {}
-bacteria_transform = None
 
 yolo_lock = threading.Lock()
 
 
-def load_bacteria_model(num_classes: int):
-    """Carga el .pt sin importar si es modelo completo, state_dict o checkpoint."""
+def softmax(logits: np.ndarray) -> np.ndarray:
+    z = logits - np.max(logits, axis=1, keepdims=True)
+    e = np.exp(z)
+    return e / np.sum(e, axis=1, keepdims=True)
 
-    obj = torch.load(BACTERIA_MODEL_PATH, map_location="cpu", weights_only=False)
 
-  
-    if isinstance(obj, torch.nn.Module):
-        return obj
-
-    if isinstance(obj, dict):
-        state_dict = obj
-        for key in ("model_state_dict", "state_dict", "model"):
-            if key in obj and isinstance(obj[key], dict):
-                state_dict = obj[key]
-                break
-        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-        model = efficientnet_b0(num_classes=num_classes)
-        model.load_state_dict(state_dict)
-        return model
-
-    raise ValueError(f"Formato de .pt no reconocido: {type(obj)}")
+def preprocess_bacteria(roi: Image.Image, size: int) -> np.ndarray:
+    """Igual que el entrenamiento: RGB, resize, ToTensor y SIN normalización de ImageNet."""
+    img = roi.convert("RGB").resize((size, size), Image.BILINEAR)
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+    return np.ascontiguousarray(arr.transpose(2, 0, 1)[None, ...], dtype=np.float32)
 
 
 def load_all_models_and_configs():
-    global yolo_model, bacteria_model, bacteria_classes, bacteria_config, bacteria_transform
+    global yolo_model, bacteria_model, bacteria_classes, bacteria_config
 
     # 1. YOLOv11 (ONNX)
     try:
@@ -84,17 +83,10 @@ def load_all_models_and_configs():
                 bacteria_config = json.load(f)
 
         if BACTERIA_MODEL_PATH.exists():
-            bacteria_model = load_bacteria_model(num_classes=len(bacteria_classes) or 1000)
-            bacteria_model.eval()
-
-        
-            img_size = bacteria_config.get("image_size", 224)
-            bacteria_transform = transforms.Compose([
-                transforms.Resize((img_size, img_size)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ])
-            print("¡Modelo EfficientNet y configuraciones cargados exitosamente!")
+            bacteria_model = ort.InferenceSession(
+                str(BACTERIA_MODEL_PATH), providers=["CPUExecutionProvider"]
+            )
+            print("¡Modelo multitarea de bacterias (ONNX) y configuraciones cargados exitosamente!")
         else:
             print(f"Advertencia: No se encontró el modelo de bacterias en {BACTERIA_MODEL_PATH}")
     except Exception as e:
@@ -107,15 +99,19 @@ async def lifespan(app: FastAPI):
 
     # Modelo C (agua / coliformes). Si falla, la API sigue viva con los otros modelos:
     # /health informa el problema y /predict/water responde 503.
-    app.state.settings = get_settings()
     app.state.water_analyzer = None
     app.state.water_error = None
-    try:
-        app.state.water_analyzer = build_water_analyzer(app.state.settings)
-        print("¡Modelo de agua (coliformes) cargado exitosamente!")
-    except AnalysisError as exc:
-        app.state.water_error = exc
-        print(f"Advertencia: modelo de agua no disponible: {exc.message}")
+    if WATER_AVAILABLE:
+        app.state.settings = get_settings()
+        try:
+            app.state.water_analyzer = build_water_analyzer(app.state.settings)
+            print("¡Modelo de agua (coliformes) cargado exitosamente!")
+        except AnalysisError as exc:
+            app.state.water_error = exc
+            print(f"Advertencia: modelo de agua no disponible: {exc.message}")
+        except Exception as exc:  # p. ej. faltan los pesos o el cargador
+            app.state.water_error = AnalysisError("MODELO_NO_DISPONIBLE", str(exc), 503)
+            print(f"Advertencia: modelo de agua no disponible: {exc}")
 
     yield
 
@@ -125,7 +121,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="API Unificada de IA - Cultivos y Bacterias",
-    description="Backend en FastAPI para YOLOv11 (Pepinos) y EfficientNet (Bacterias)",
+    description="Backend en FastAPI para YOLOv11 (pepino) y EfficientNet-B0 multitarea (bacterias: Gram + morfología)",
     version="2.2.0",
     lifespan=lifespan,
 )
@@ -138,8 +134,9 @@ app.add_middleware(
 )
 
 # Modelo C (agua): endpoint POST /predict/water y errores con formato {"error": {"code", "message"}}.
-register_error_handlers(app)
-app.include_router(water_router)
+if WATER_AVAILABLE:
+    register_error_handlers(app)
+    app.include_router(water_router)
 
 
 def read_image(file: UploadFile) -> Image.Image:
@@ -149,10 +146,20 @@ def read_image(file: UploadFile) -> Image.Image:
         raise HTTPException(status_code=413, detail="La imagen supera el límite de 10 MB.")
     try:
         image = Image.open(io.BytesIO(data))
-        image = ImageOps.exif_transpose(image)  
-        return image.convert("RGB")
+        fmt = image.format
+        image.load()
+        image = ImageOps.exif_transpose(image)
+        image = image.convert("RGB")
     except Exception:
         raise HTTPException(status_code=400, detail="El archivo enviado no es una imagen válida.")
+    if fmt not in ALLOWED_FORMATS:
+        raise HTTPException(status_code=415, detail="Formato no compatible. Usa una imagen JPG o PNG.")
+    if min(image.size) < MIN_IMAGE_SIDE:
+        raise HTTPException(
+            status_code=422,
+            detail=f"La imagen es demasiado pequeña. Usa una de al menos {MIN_IMAGE_SIDE} × {MIN_IMAGE_SIDE} px.",
+        )
+    return image
 
 
 @app.get("/")
@@ -183,7 +190,7 @@ def health():
             "loaded": analyzer is not None,
             "backend": analyzer.model.backend if analyzer else None,
             "version": analyzer.model.version if analyzer else None,
-            "error": err.message if err else None,
+            "error": err.message if err else WATER_IMPORT_ERROR,
         },
     }
 
@@ -237,29 +244,62 @@ def predict_cucumber(file: UploadFile = File(...), conf: float = 0.25, iou: floa
 
 
 @app.post("/predict/bacteria")
-def predict_bacteria(file: UploadFile = File(...)):
+def predict_bacteria(
+    file: UploadFile = File(...),
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    w: Optional[int] = None,
+    h: Optional[int] = None,
+):
+    """Clasifica una bacteria (Gram + morfología) a partir de un ROI bacteriano.
+
+    El modelo se entrenó con recortes (bbox exacto). Si se envían `x`, `y`, `w`, `h`
+    (píxeles de la imagen original) se recorta ese ROI; si no, se usa la imagen completa.
+    """
     if bacteria_model is None:
         raise HTTPException(status_code=500, detail="El modelo EfficientNet de bacterias no está cargado.")
 
     image = read_image(file)
 
+    bbox_given = [v is not None for v in (x, y, w, h)]
+    if any(bbox_given):
+        if not all(bbox_given):
+            raise HTTPException(status_code=422, detail="Para recortar el ROI envía x, y, w y h juntos.")
+        if w <= 0 or h <= 0 or x < 0 or y < 0 or x + w > image.width or y + h > image.height:
+            raise HTTPException(status_code=422, detail="El ROI queda fuera de la imagen.")
+        image = image.crop((x, y, x + w, y + h))
+
     try:
-        input_tensor = bacteria_transform(image).unsqueeze(0)
-
-        with torch.no_grad():
-            outputs = bacteria_model(input_tensor)
-            probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
-            conf, predicted_idx = torch.max(probabilities, 0)
-
-        idx = predicted_idx.item()
-        predicted_class = (
-            bacteria_classes[idx] if bacteria_classes and idx < len(bacteria_classes) else str(idx)
+        size = int((bacteria_config.get("input_size") or [224, 224])[0])
+        tensor = preprocess_bacteria(image, size)
+        gram_logits, morph_logits = bacteria_model.run(
+            ["gram_logits", "morph_logits"], {"image": tensor}
         )
+        gram_p = softmax(gram_logits)[0]
+        morph_p = softmax(morph_logits)[0]
+        gi, mi = int(np.argmax(gram_p)), int(np.argmax(morph_p))
+        gram_names = bacteria_classes.get("gram", {})
+        morph_names = bacteria_classes.get("morphology", {})
+        gram_label = gram_names.get(str(gi), str(gi))
+        morph_label = morph_names.get(str(mi), str(mi))
 
         return {
             "success": True,
-            "predicted_class": predicted_class,
-            "confidence": round(conf.item(), 4),
+            # Campos de compatibilidad con la app actual: la morfología es la clase principal.
+            "predicted_class": morph_label,
+            "confidence": round(float(morph_p[mi]), 4),
+            "gram": {
+                "label": gram_label,
+                "confidence": round(float(gram_p[gi]), 4),
+            },
+            "morphology": {
+                "label": morph_label,
+                "confidence": round(float(morph_p[mi]), 4),
+                "probabilities": {
+                    morph_names.get(str(k), str(k)): round(float(v), 4) for k, v in enumerate(morph_p)
+                },
+            },
+            "roi_used": any(bbox_given),
         }
 
     except Exception as e:

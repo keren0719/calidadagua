@@ -170,10 +170,9 @@ renombra las claves para que coincidan con tus clases.
 
 ---
 
-## 5. Observaciones sobre el backend (no se modificó)
+## 5. Observaciones sobre el backend
 
-- A `Requirements.txt` le faltan paquetes que `main.py` importa: **`ultralytics`**, **`numpy`** y
-  **`onnxruntime`** (este último para cargar el `.onnx`).
+- `Requirements.txt` ya incluye `ultralytics`, `numpy` (<2, por compatibilidad con torch 2.2) y `onnxruntime`.
 - Los modelos (`model/*.onnx`, `model/*.pt`, `model/config/*.json`) no están en el repositorio. Sin
   ellos, `GET /` indica *No cargado* y los endpoints de predicción responden error 500. La app
   muestra ese mensaje con opción de reintentar.
@@ -187,7 +186,7 @@ renombra las claves para que coincidan con tus clases.
 - Se incluyó la fuente Manrope en `assets/fonts` para que la app no dependa de internet.
 ## 7. Base de datos
 
-El script [`database/agrovision_db.sql`](database/agrovision_db.sql) guardado en el repositorio con la ubicacion API REST/Bacteria_multitask crea la base de datos
+El script [`agrovision_db.sql`](backend/API%20REST/Bacteria_multitask/agrovision_db.sql) (en `backend/API REST/Bacteria_multitask`) crea la base de datos
 `agrovision_db` (MariaDB 10.2.1 o superior; probado con la 13.x). Aún no está conectada
 a la API: es la base para implementar `/auth/*` y guardar el historial en el servidor
 (ver sección 7).
@@ -222,7 +221,7 @@ La vista `vista_historial` une todo para la pantalla Historial.
 
 Ejecutar el script completo en MySQL Workbench, o desde la terminal:
 
-    mariadb -u usuario -p < database/agrovision_db.sql
+    mariadb -u usuario -p < agrovision_db.sql
 
 Si ya existe una versión anterior de la base de datos y no hay datos que conservar,
 ejecutar antes `DROP DATABASE IF EXISTS agrovision_db;`.
@@ -232,3 +231,20 @@ ejecutar antes `DROP DATABASE IF EXISTS agrovision_db;`.
 
   `HistoryRepository`. Hoy se guarda en el teléfono.
 - Antes de publicar: ícono de la app, firma de release en Android y quitar el tráfico `http://`.
+
+## 9. Modelo de agua (coliformes) · en desarrollo
+
+El paquete `backend/API REST/Bacteria_multitask/agua` contiene la validación, las reglas de decisión y las
+recomendaciones de `POST /predict/water`. Falta el cargador del modelo (`agua/models/water.py`) y sus pesos, que
+dependen de que el curso habilite el modelo. Mientras tanto la API arranca igual con YOLO y EfficientNet:
+`GET /health` informa el estado del modelo de agua y `/predict/water` no se registra.
+
+Reglas de imagen unificadas (app y API): JPG o PNG, mínimo 300 × 300 px, máximo 10 MB.
+
+## 10. Modelos integrados
+
+- `model/yolo11m_cucumber.onnx` (YOLO11m, 7 clases de pepino) → `POST /predict/cucumber`.
+- `model/bacteria_efficientnet_b0.onnx` (EfficientNet-B0 multitarea: Gram + morfología) → `POST /predict/bacteria`.
+  Espera un **ROI bacteriano** (microscopía): se puede enviar `?x=&y=&w=&h=` para recortarlo; sin ellos usa la imagen completa.
+  No identifica especies ni potabilidad del agua.
+- Configuración y clases en `model/config/` (`yolo_*.json`, `bacteria_*.json`). Los `.pt` originales no se incluyen.

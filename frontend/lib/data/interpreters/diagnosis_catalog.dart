@@ -141,6 +141,25 @@ class DiagnosisCatalog {
             'de alto riesgo que debe confirmarse de inmediato.',
         recommendations: _waterContaminated,
       ),
+    // Morfologías que devuelve el modelo multitarea (ROI bacteriano al microscopio).
+    // Describen la forma de la bacteria, no la especie ni si el agua es potable.
+    for (final entry in const {
+      'bacillus': ('Bacilos', 'Bacterias en forma de bastón'),
+      'coccobacillus': ('Cocobacilos', 'Bacterias de forma intermedia (ovalada)'),
+      'coccus': ('Cocos', 'Bacterias de forma esférica'),
+      'staphylococci': ('Estafilococos', 'Cocos agrupados en racimos'),
+      'streptobacilli': ('Estreptobacilos', 'Bacilos dispuestos en cadena'),
+      'streptococci': ('Estreptococos', 'Cocos dispuestos en cadena'),
+    }.entries)
+      entry.key: DiagnosisInfo(
+        status: ResultStatus.warning,
+        title: entry.value.$1,
+        finding: entry.value.$2,
+        explanation:
+            'El modelo identificó una morfología bacteriana de tipo "${entry.value.$1}". '
+            'Esto describe la forma observada, no la especie ni si el agua es apta para el consumo.',
+        recommendations: _waterContaminated,
+      ),
   };
 
   static DiagnosisInfo waterFallback(String label) => DiagnosisInfo(

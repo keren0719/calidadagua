@@ -1,0 +1,71 @@
+{
+    "model_name": "Bacteria MultiTask EfficientNet-B0",
+    "architecture": "EfficientNet-B0 (timm)",
+    "task": "multitask classification",
+    "input_size": [
+        224,
+        224
+    ],
+    "input_color": "RGB",
+    "preprocessing": {
+        "resize": [
+            224,
+            224
+        ],
+        "to_tensor": true,
+        "normalization": null
+    },
+    "roi": {
+        "mode": "bbox_exact",
+        "roi_margin_pct_metadata": 0.15,
+        "margin_applied_in_bbox_exact": false
+    },
+    "outputs": {
+        "gram": {
+            "n_classes": 2,
+            "classes": [
+                "Gram-negative",
+                "Gram-positive"
+            ]
+        },
+        "morphology": {
+            "n_classes": 6,
+            "classes": [
+                "Bacillus",
+                "Coccobacillus",
+                "Coccus",
+                "Staphylococci",
+                "Streptobacilli",
+                "Streptococci"
+            ]
+        }
+    },
+    "checkpoint": {
+        "epoch": 12,
+        "best_val": 0.04110669942661371,
+        "use_balanced": false
+    },
+    "files": {
+        "pytorch": "model/bacteria_efficientnet_b0_best.pt",
+        "onnx": "model/bacteria_efficientnet_b0.onnx"
+    },
+    "test_metrics": {
+        "gram": {
+            "accuracy": 0.9994311717861206,
+            "balanced_accuracy": 0.9996307237813884,
+            "f1": 0.9996305873660879
+        },
+        "morphology": {
+            "accuracy": 0.9789533560864618,
+            "balanced_accuracy": 0.9613279264714273,
+            "macro_f1": 0.9447294394411894,
+            "weighted_f1": 0.9794801066468867
+        }
+    },
+    "onnx_validation": {
+        "max_gram_logits_difference": 1.4305115e-06,
+        "max_morph_logits_difference": 4.887581e-06,
+        "same_gram_class": true,
+        "same_morph_class": true
+    }
+}

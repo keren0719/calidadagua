@@ -1,0 +1,14 @@
+{
+    "gram": {
+        "0": "Gram-negative",
+        "1": "Gram-positive"
+    },
+    "morphology": {
+        "0": "Bacillus",
+        "1": "Coccobacillus",
+        "2": "Coccus",
+        "3": "Staphylococci",
+        "4": "Streptobacilli",
+        "5": "Streptococci"
+    }
+}
