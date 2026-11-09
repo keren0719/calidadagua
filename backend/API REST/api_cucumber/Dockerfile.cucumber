@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.6.0 torchvision==0.21.0
+
+COPY requirements-cucumber.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY api_common.py api_cucumber.py cucumber_main.py ./
+COPY yolo11m_cucumber_deployment.zip /tmp/yolo-deployment.zip
+RUN mkdir -p /app/model && python -c "import zipfile; from pathlib import Path; archive=zipfile.ZipFile('/tmp/yolo-deployment.zip'); matches=[name for name in archive.namelist() if name.endswith('/model/yolo11m_cucumber.onnx')]; assert matches, 'No se encontró yolo11m_cucumber.onnx en el ZIP'; Path('/app/model/yolo11m_cucumber.onnx').write_bytes(archive.read(matches[0]))" \
+    && rm /tmp/yolo-deployment.zip
+
+EXPOSE 8000
+CMD ["uvicorn", "cucumber_main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
