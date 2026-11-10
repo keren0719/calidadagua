@@ -3,7 +3,12 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from ultralytics import YOLO
+try:
+    from ultralytics import YOLO
+    ULTRALYTICS_AVAILABLE = True
+except ImportError:
+    YOLO = None
+    ULTRALYTICS_AVAILABLE = False
 
 from api_common import read_image
 
@@ -15,6 +20,10 @@ yolo_lock = threading.Lock()
 
 def load_model() -> None:
     global yolo_model
+
+    if not ULTRALYTICS_AVAILABLE:
+        print("Advertencia: Ultralytics no está instalado. Modelo YOLO no cargado.")
+        return
 
     try:
         if MODEL_PATH.exists():

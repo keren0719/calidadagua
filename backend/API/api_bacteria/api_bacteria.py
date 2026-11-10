@@ -1,10 +1,17 @@
 import json
 from pathlib import Path
 
-import torch
-import torchvision.transforms as transforms
+try:
+    import torch
+    import torchvision.transforms as transforms
+    from torchvision.models import efficientnet_b0
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    transforms = None
+    efficientnet_b0 = None
+    TORCH_AVAILABLE = False
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from torchvision.models import efficientnet_b0
 
 from api_common import read_image
 
@@ -42,6 +49,10 @@ def _load_checkpoint(num_classes: int):
 
 def load_model() -> None:
     global bacteria_model, bacteria_classes, bacteria_config, bacteria_transform
+
+    if not TORCH_AVAILABLE:
+        print("Advertencia: PyTorch no está instalado. Modelo de bacterias no cargado.")
+        return
 
     try:
         if CLASSES_PATH.exists():

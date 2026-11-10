@@ -1,4 +1,12 @@
 import contextlib
+import sys
+from pathlib import Path
+
+# Asegurar resolución de submódulos (api_bacteria, api_cucumber, agua, aqua)
+BASE_API_DIR = Path(__file__).resolve().parent.parent
+for p in (BASE_API_DIR, BASE_API_DIR / "Bacteria_multitask"):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
